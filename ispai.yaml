@@ -253,12 +253,12 @@ services:
     - N8N_AI_PROVIDER=openai
     - N8N_AI_OPENAI_API_KEY=
     - N8N_EMAIL_MODE=smtp
-    - N8N_SMTP_HOST=smtp.seudominio.com.br
-    - N8N_SMTP_PORT=587
-    - N8N_SMTP_USER=username@seudominio.com.br
-    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
-    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
-    - N8N_SMTP_SSL=true
+    - N8N_SMTP_HOST=${SMTP_HOST:-}
+    - N8N_SMTP_PORT=${SMTP_PORT:-587}
+    - N8N_SMTP_USER=${SMTP_USER:-}
+    - N8N_SMTP_PASS=${SMTP_TOKEN:-}
+    - N8N_SMTP_SENDER=${SMTP_FROM:-}
+    - N8N_SMTP_SSL=false
     volumes:
     - /storage/n8n/data:/home/node/.n8n
     - /storage/n8n/nodes:/data/nodes
@@ -358,12 +358,12 @@ services:
     - N8N_AI_PROVIDER=openai
     - N8N_AI_OPENAI_API_KEY=
     - N8N_EMAIL_MODE=smtp
-    - N8N_SMTP_HOST=smtp.seudominio.com.br
-    - N8N_SMTP_PORT=587
-    - N8N_SMTP_USER=username@seudominio.com.br
-    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
-    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
-    - N8N_SMTP_SSL=true
+    - N8N_SMTP_HOST=${SMTP_HOST:-}
+    - N8N_SMTP_PORT=${SMTP_PORT:-587}
+    - N8N_SMTP_USER=${SMTP_USER:-}
+    - N8N_SMTP_PASS=${SMTP_TOKEN:-}
+    - N8N_SMTP_SENDER=${SMTP_FROM:-}
+    - N8N_SMTP_SSL=false
     volumes:
     - /storage/n8n/data:/home/node/.n8n
     - /storage/n8n/nodes:/data/nodes
@@ -462,12 +462,12 @@ services:
     - N8N_AI_PROVIDER=openai
     - N8N_AI_OPENAI_API_KEY=
     - N8N_EMAIL_MODE=smtp
-    - N8N_SMTP_HOST=smtp.seudominio.com.br
-    - N8N_SMTP_PORT=587
-    - N8N_SMTP_USER=username@seudominio.com.br
-    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
-    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
-    - N8N_SMTP_SSL=true
+    - N8N_SMTP_HOST=${SMTP_HOST:-}
+    - N8N_SMTP_PORT=${SMTP_PORT:-587}
+    - N8N_SMTP_USER=${SMTP_USER:-}
+    - N8N_SMTP_PASS=${SMTP_TOKEN:-}
+    - N8N_SMTP_SENDER=${SMTP_FROM:-}
+    - N8N_SMTP_SSL=false
     volumes:
     - /storage/n8n/data:/home/node/.n8n
     - /storage/n8n/nodes:/data/nodes
@@ -635,15 +635,15 @@ services:
     - POSTGRES_USERNAME=postgres
     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     - POSTGRES_DATABASE=chatwoot
-    - MAILER_SENDER_EMAIL=noreply@seudominio.com.br
-    - SMTP_ADDRESS=smtp.seudominio.com.br
-    - SMTP_PORT=587
-    - SMTP_AUTHENTICATION=plain
-    - SMTP_DOMAIN=seudominio.com.br
-    - SMTP_ENABLE_STARTTLS_AUTO=true
-    - SMTP_USERNAME=usuario@seudominio.com.br
-    - SMTP_PASSWORD=sua_senha_smtp
-    - SMTP_OPENSSL_VERIFY_MODE=none
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
     - ACTIVE_STORAGE_SERVICE=s3_compatible
     - STORAGE_BUCKET_NAME=chatwoot
     - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
@@ -711,15 +711,15 @@ services:
     - POSTGRES_USERNAME=postgres
     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     - POSTGRES_DATABASE=chatwoot
-    - MAILER_SENDER_EMAIL=noreply@seudominio.com.br
-    - SMTP_ADDRESS=smtp.seudominio.com.br
-    - SMTP_PORT=587
-    - SMTP_AUTHENTICATION=plain
-    - SMTP_DOMAIN=seudominio.com.br
-    - SMTP_ENABLE_STARTTLS_AUTO=true
-    - SMTP_USERNAME=usuario@seudominio.com.br
-    - SMTP_PASSWORD=sua_senha_smtp
-    - SMTP_OPENSSL_VERIFY_MODE=none
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
     - ACTIVE_STORAGE_SERVICE=s3_compatible
     - STORAGE_BUCKET_NAME=chatwoot
     - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
