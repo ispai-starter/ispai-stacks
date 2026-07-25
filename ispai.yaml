@@ -1,0 +1,748 @@
+services:
+  redis:
+    image: redis@sha256:234c902a2db49461a129e2d4aeff85b28cf20187ed274a67f6e50995fa713c7b
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command:
+    - redis-server
+    - --dir
+    - /data
+    - --appendonly
+    - 'yes'
+    - --maxmemory-policy
+    - noeviction
+    volumes:
+    - /storage/redis/data:/data
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+  postgres:
+    image: pgvector/pgvector@sha256:12a379b47ad65289572ea0756efc11b7c241a6662833e8af7038cd3b73d647e0
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    environment:
+    - TZ=America/Sao_Paulo
+    - PGTZ=America/Sao_Paulo
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - PGDATA=/var/lib/postgresql/data/pgdata
+    - POSTGRES_INITDB_ARGS=--encoding=UTF8 --locale=C.UTF-8 --data-checksums --auth-host=scram-sha-256 --auth-local=trust
+    command:
+    - postgres
+    - --timezone=America/Sao_Paulo
+    - --log_timezone=America/Sao_Paulo
+    - --max_connections=200
+    - --superuser_reserved_connections=3
+    - --shared_buffers=512MB
+    - --effective_cache_size=1GB
+    - --work_mem=8MB
+    - --maintenance_work_mem=128MB
+    - --temp_buffers=8MB
+    - --wal_buffers=16MB
+    - --min_wal_size=256MB
+    - --max_wal_size=1GB
+    - --checkpoint_completion_target=0.9
+    - --checkpoint_timeout=10min
+    - --wal_compression=on
+    - --wal_level=minimal
+    - --max_wal_senders=0
+    - --random_page_cost=1.1
+    - --effective_io_concurrency=200
+    - --default_statistics_target=100
+    - --max_worker_processes=4
+    - --max_parallel_workers=2
+    - --max_parallel_workers_per_gather=1
+    - --max_parallel_maintenance_workers=2
+    - --autovacuum=on
+    - --autovacuum_max_workers=2
+    - --autovacuum_naptime=30s
+    - --autovacuum_vacuum_threshold=50
+    - --autovacuum_vacuum_scale_factor=0.05
+    - --autovacuum_analyze_threshold=50
+    - --autovacuum_analyze_scale_factor=0.05
+    - --statement_timeout=120000
+    - --idle_in_transaction_session_timeout=300000
+    - --lock_timeout=30000
+    - --log_destination=stderr
+    - --logging_collector=off
+    - --log_min_duration_statement=2000
+    - --log_checkpoints=on
+    - --log_lock_waits=on
+    - --log_autovacuum_min_duration=1000
+    - --shared_preload_libraries=pg_stat_statements
+    - --track_activities=on
+    - --track_counts=on
+    - --track_io_timing=on
+    volumes:
+    - /storage/postgres/data:/var/lib/postgresql/data
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2560M
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+  postgres-init:
+    image: pgvector/pgvector@sha256:12a379b47ad65289572ea0756efc11b7c241a6662833e8af7038cd3b73d647e0
+    environment:
+    - PGPASSWORD=${POSTGRES_PASSWORD}
+    command: "sh -c \"\n  until pg_isready -h postgres -U postgres; do sleep 2; done;\n  \n  echo '=== Criando database e user: n8n ===';\n  psql -h postgres -U postgres -tc \\\"SELECT 1 FROM pg_database WHERE datname = 'n8n'\\\" | grep -q 1 || psql -h postgres -U postgres -c 'CREATE DATABASE n8n';\n  psql -h postgres -U postgres -tc \\\"SELECT 1 FROM pg_roles WHERE rolname = 'n8n'\\\" | grep -q 1 || psql -h postgres -U postgres -c \\\"CREATE USER n8n WITH PASSWORD '${POSTGRES_PASSWORD}'\\\";\n  psql -h postgres -U postgres -c 'GRANT ALL PRIVILEGES ON DATABASE n8n TO n8n';\n  psql -h postgres -U postgres -d n8n -c 'GRANT ALL ON SCHEMA public TO n8n';\n  \n  echo '=== Habilitando extens\xF5es: n8n ===';\n  psql -h postgres -U postgres -d n8n -c 'CREATE EXTENSION IF NOT EXISTS vector';\n  psql -h postgres -U postgres -d n8n -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements';\n  \n  echo '=== Criando database: waha ===';\n  psql -h postgres -U postgres -tc \\\"SELECT 1 FROM pg_database WHERE datname = 'waha'\\\" | grep -q 1 || psql -h postgres -U postgres -c 'CREATE DATABASE waha';\n  \n  echo '=== Init conclu\xEDdo com sucesso ===';\n\"\n"
+    networks:
+    - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 10
+  minio:
+    image: quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: server /data --console-address ":9001"
+    environment:
+    - TZ=America/Sao_Paulo
+    - MINIO_ROOT_USER=admin
+    - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    - MINIO_BROWSER_REDIRECT_URL=https://cdn.${DOMAIN}
+    - MINIO_SERVER_URL=https://s3.${DOMAIN}
+    volumes:
+    - /storage/minio/data:/data
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD
+      - mc
+      - ready
+      - local
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1024M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+      - traefik.enable=true
+      - traefik.swarm.network=network_public
+      - traefik.http.routers.minio-s3.rule=Host(`s3.${DOMAIN}`)
+      - traefik.http.routers.minio-s3.entrypoints=websecure
+      - traefik.http.routers.minio-s3.tls.certresolver=letsencrypt
+      - traefik.http.routers.minio-s3.service=minio-s3
+      - traefik.http.services.minio-s3.loadbalancer.server.port=9000
+      - traefik.http.services.minio-s3.loadbalancer.passHostHeader=true
+      - traefik.http.routers.minio-console.rule=Host(`cdn.${DOMAIN}`)
+      - traefik.http.routers.minio-console.entrypoints=websecure
+      - traefik.http.routers.minio-console.tls.certresolver=letsencrypt
+      - traefik.http.routers.minio-console.service=minio-console
+      - traefik.http.services.minio-console.loadbalancer.server.port=9001
+      - traefik.http.services.minio-console.loadbalancer.passHostHeader=true
+  n8n-editor:
+    image: n8nio/n8n@sha256:cda6bafc7bb4873533e7affb82d1bd47282a7614bdf83242c2293f8ff281261a
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    environment:
+    - TZ=America/Sao_Paulo
+    - GENERIC_TIMEZONE=America/Sao_Paulo
+    - N8N_HOST=wf.${DOMAIN}
+    - N8N_EDITOR_BASE_URL=https://wf.${DOMAIN}/
+    - WEBHOOK_URL=https://wb.${DOMAIN}/
+    - N8N_PORT=5678
+    - N8N_PROTOCOL=https
+    - N8N_ENDPOINT_WEBHOOK=webhook
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+    - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    - NODE_ENV=production
+    - EXECUTIONS_MODE=queue
+    - EXECUTIONS_TIMEOUT=3600
+    - EXECUTIONS_TIMEOUT_MAX=7200
+    - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+    - N8N_RUNNERS_ENABLED=true
+    - N8N_RUNNERS_MODE=internal
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_BULL_REDIS_PORT=6379
+    - QUEUE_BULL_REDIS_DB=2
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=n8n
+    - DB_POSTGRESDB_USER=postgres
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+    - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+    - N8N_TEMPLATES_ENABLED=true
+    - N8N_ONBOARDING_FLOW_DISABLED=true
+    - N8N_WORKFLOW_TAGS_DISABLED=false
+    - N8N_HIDE_USAGE_PAGE=false
+    - N8N_METRICS=true
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PAYLOAD_SIZE_MAX=16
+    - N8N_LOG_LEVEL=info
+    - EXECUTIONS_DATA_PRUNE=true
+    - EXECUTIONS_DATA_MAX_AGE=336
+    - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+    - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+    - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+    - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+    - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+    - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+    - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+    - NODE_FUNCTION_ALLOW_BUILTIN=*
+    - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+    - N8N_COMMUNITY_PACKAGES_ENABLED=true
+    - N8N_REINSTALL_MISSING_PACKAGES=true
+    - N8N_NODE_PATH=/home/node/.n8n/nodes
+    - N8N_AI_ENABLED=false
+    - N8N_AI_PROVIDER=openai
+    - N8N_AI_OPENAI_API_KEY=
+    - N8N_EMAIL_MODE=smtp
+    - N8N_SMTP_HOST=smtp.seudominio.com.br
+    - N8N_SMTP_PORT=587
+    - N8N_SMTP_USER=username@seudominio.com.br
+    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
+    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
+    - N8N_SMTP_SSL=true
+    volumes:
+    - /storage/n8n/data:/home/node/.n8n
+    - /storage/n8n/nodes:/data/nodes
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:5678/healthz || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+      - traefik.enable=true
+      - traefik.swarm.network=network_public
+      - traefik.http.routers.n8n-editor.rule=Host(`wf.${DOMAIN}`)
+      - traefik.http.routers.n8n-editor.entrypoints=websecure
+      - traefik.http.routers.n8n-editor.tls.certresolver=letsencrypt
+      - traefik.http.routers.n8n-editor.service=n8n-editor
+      - traefik.http.services.n8n-editor.loadbalancer.server.port=5678
+      - traefik.http.services.n8n-editor.loadbalancer.passHostHeader=true
+  n8n-webhook:
+    image: n8nio/n8n@sha256:cda6bafc7bb4873533e7affb82d1bd47282a7614bdf83242c2293f8ff281261a
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: webhook
+    environment:
+    - TZ=America/Sao_Paulo
+    - GENERIC_TIMEZONE=America/Sao_Paulo
+    - N8N_HOST=wf.${DOMAIN}
+    - N8N_EDITOR_BASE_URL=https://wf.${DOMAIN}/
+    - WEBHOOK_URL=https://wb.${DOMAIN}/
+    - N8N_PORT=5678
+    - N8N_PROTOCOL=https
+    - N8N_ENDPOINT_WEBHOOK=webhook
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+    - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    - NODE_ENV=production
+    - EXECUTIONS_MODE=queue
+    - EXECUTIONS_TIMEOUT=3600
+    - EXECUTIONS_TIMEOUT_MAX=7200
+    - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+    - N8N_RUNNERS_ENABLED=true
+    - N8N_RUNNERS_MODE=internal
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_BULL_REDIS_PORT=6379
+    - QUEUE_BULL_REDIS_DB=2
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=n8n
+    - DB_POSTGRESDB_USER=postgres
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+    - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+    - N8N_TEMPLATES_ENABLED=true
+    - N8N_ONBOARDING_FLOW_DISABLED=true
+    - N8N_WORKFLOW_TAGS_DISABLED=false
+    - N8N_HIDE_USAGE_PAGE=false
+    - N8N_METRICS=true
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PAYLOAD_SIZE_MAX=16
+    - N8N_LOG_LEVEL=info
+    - EXECUTIONS_DATA_PRUNE=true
+    - EXECUTIONS_DATA_MAX_AGE=336
+    - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+    - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+    - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+    - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+    - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+    - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+    - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+    - NODE_FUNCTION_ALLOW_BUILTIN=*
+    - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+    - N8N_COMMUNITY_PACKAGES_ENABLED=true
+    - N8N_REINSTALL_MISSING_PACKAGES=true
+    - N8N_NODE_PATH=/home/node/.n8n/nodes
+    - N8N_AI_ENABLED=false
+    - N8N_AI_PROVIDER=openai
+    - N8N_AI_OPENAI_API_KEY=
+    - N8N_EMAIL_MODE=smtp
+    - N8N_SMTP_HOST=smtp.seudominio.com.br
+    - N8N_SMTP_PORT=587
+    - N8N_SMTP_USER=username@seudominio.com.br
+    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
+    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
+    - N8N_SMTP_SSL=true
+    volumes:
+    - /storage/n8n/data:/home/node/.n8n
+    - /storage/n8n/nodes:/data/nodes
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:5678/healthz || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 768M
+        reservations:
+          cpus: '0.25'
+          memory: 384M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+      - traefik.enable=true
+      - traefik.swarm.network=network_public
+      - traefik.http.routers.n8n-webhook.rule=Host(`wb.${DOMAIN}`)
+      - traefik.http.routers.n8n-webhook.entrypoints=websecure
+      - traefik.http.routers.n8n-webhook.tls.certresolver=letsencrypt
+      - traefik.http.services.n8n-webhook.loadbalancer.server.port=5678
+      - traefik.http.services.n8n-webhook.loadbalancer.passHostHeader=true
+  n8n-worker:
+    image: n8nio/n8n@sha256:cda6bafc7bb4873533e7affb82d1bd47282a7614bdf83242c2293f8ff281261a
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: worker
+    environment:
+    - TZ=America/Sao_Paulo
+    - GENERIC_TIMEZONE=America/Sao_Paulo
+    - N8N_HOST=wf.${DOMAIN}
+    - N8N_EDITOR_BASE_URL=https://wf.${DOMAIN}/
+    - WEBHOOK_URL=https://wb.${DOMAIN}/
+    - N8N_PORT=5678
+    - N8N_PROTOCOL=https
+    - N8N_ENDPOINT_WEBHOOK=webhook
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+    - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    - NODE_ENV=production
+    - EXECUTIONS_MODE=queue
+    - EXECUTIONS_TIMEOUT=3600
+    - EXECUTIONS_TIMEOUT_MAX=7200
+    - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+    - N8N_RUNNERS_ENABLED=true
+    - N8N_RUNNERS_MODE=internal
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_BULL_REDIS_PORT=6379
+    - QUEUE_BULL_REDIS_DB=2
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=n8n
+    - DB_POSTGRESDB_USER=postgres
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+    - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+    - N8N_TEMPLATES_ENABLED=true
+    - N8N_ONBOARDING_FLOW_DISABLED=true
+    - N8N_WORKFLOW_TAGS_DISABLED=false
+    - N8N_HIDE_USAGE_PAGE=false
+    - N8N_METRICS=true
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PAYLOAD_SIZE_MAX=16
+    - N8N_LOG_LEVEL=info
+    - EXECUTIONS_DATA_PRUNE=true
+    - EXECUTIONS_DATA_MAX_AGE=336
+    - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+    - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+    - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+    - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+    - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+    - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+    - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+    - NODE_FUNCTION_ALLOW_BUILTIN=*
+    - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+    - N8N_COMMUNITY_PACKAGES_ENABLED=true
+    - N8N_REINSTALL_MISSING_PACKAGES=true
+    - N8N_NODE_PATH=/home/node/.n8n/nodes
+    - N8N_AI_ENABLED=false
+    - N8N_AI_PROVIDER=openai
+    - N8N_AI_OPENAI_API_KEY=
+    - N8N_EMAIL_MODE=smtp
+    - N8N_SMTP_HOST=smtp.seudominio.com.br
+    - N8N_SMTP_PORT=587
+    - N8N_SMTP_USER=username@seudominio.com.br
+    - N8N_SMTP_PASS=${SMTP_PASSWORD:-}
+    - N8N_SMTP_SENDER=seuemail@seudominio.com.br
+    - N8N_SMTP_SSL=true
+    volumes:
+    - /storage/n8n/data:/home/node/.n8n
+    - /storage/n8n/nodes:/data/nodes
+    networks:
+    - network_public
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pgrep -f 'n8n worker' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+  waha:
+    image: devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: node ./dist/main.js
+    volumes:
+    - /storage/waha/sessions:/app/.sessions
+    - /storage/waha/media:/app/media
+    - /storage/waha/data:/app/waha_whatsapp_data
+    - /storage/waha/logs:/app/waha_whatsapp_logs
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - PORT=3000
+    - WHATSAPP_API_PORT=3000
+    - WHATSAPP_API_HOSTNAME=waha.${DOMAIN}
+    - WHATSAPP_API_SCHEMA=https
+    - WAHA_BASE_URL=https://waha.${DOMAIN}
+    - WAHA_PUBLIC_URL=https://waha.${DOMAIN}
+    - WAHA_API_KEY_PLAIN=${WAHA_API_KEY_PLAIN}
+    - WAHA_API_KEY=${WAHA_API_KEY}
+    - WAHA_CLIENT_DEVICE_NAME=ISP AI - WhatsApp
+    - WAHA_CLIENT_BROWSER_NAME=Chrome
+    - WHATSAPP_SESSIONS_POSTGRESQL_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/waha?sslmode=disable
+    - REDIS_URL=redis://redis:6379/4
+    - WAHA_DASHBOARD_ENABLED=true
+    - WAHA_DASHBOARD_USERNAME=admin
+    - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
+    - WHATSAPP_SWAGGER_ENABLED=false
+    - WHATSAPP_SWAGGER_USERNAME=admin
+    - WHATSAPP_SWAGGER_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
+    - WHATSAPP_SWAGGER_TITLE=ISP AI - WhatsApp HTTP API
+    - WHATSAPP_SWAGGER_DESCRIPTION=API WhatsApp ISP AI Starter
+    - WHATSAPP_SWAGGER_EXTERNAL_DOC_URL=https://waha.devlike.pro/
+    - WAHA_RESTART_ALL_SESSIONS=true
+    - WAHA_AUTO_START_DELAY_SECONDS=10
+    - WAHA_PRESENCE_AUTO_ONLINE=True
+    - WAHA_PRESENCE_AUTO_ONLINE_DURATION_SECONDS=25
+    - WHATSAPP_DEFAULT_ENGINE=GOWS
+    - WAHA_LOG_FORMAT=JSON
+    - WAHA_LOG_LEVEL=info
+    - WAHA_HTTP_LOG_LEVEL=info
+    - WAHA_PRINT_QR=False
+    - WAHA_APPS_ENABLED=true
+    - WAHA_APPS_ON=calls,chatwoot
+    - WAHA_WORKER_ID=waha
+    - WAHA_CHATWOOT_COMMAND_PREFIX=wa/
+    - WAHA_CHATWOOT_MESSAGE_CALENDAR_THRESHOLD_SECONDS=600
+    - WAHA_APPS_JOBS_CONCURRENCY=25
+    - WAHA_APPS_JOBS_ATTEMPTS=3
+    - WAHA_APPS_JOBS_DELAY=0
+    - WAHA_APPS_JOBS_BACKOFF_TYPE=exponential
+    - WAHA_APPS_JOBS_BACKOFF_DELAY=1000
+    - WAHA_APPS_JOBS_REMOVE_ON_COMPLETE_AGE=259200
+    - WAHA_APPS_JOBS_REMOVE_ON_COMPLETE_COUNT=1000
+    - WAHA_APPS_JOBS_REMOVE_ON_FAIL_AGE=2678400
+    - WAHA_APPS_JOBS_REMOVE_ON_FAIL_COUNT=1000
+    - WAHA_MEDIA_STORAGE=LOCAL
+    - WHATSAPP_FILES_FOLDER=/app/media
+    - WHATSAPP_FILES_LIFETIME=86400
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://127.0.0.1:3000/ping
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 1024M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+      - traefik.enable=true
+      - traefik.swarm.network=network_public
+      - traefik.http.routers.waha.rule=Host(`waha.${DOMAIN}`)
+      - traefik.http.routers.waha.priority=1
+      - traefik.http.routers.waha.entrypoints=websecure
+      - traefik.http.routers.waha.tls.certresolver=letsencrypt
+      - traefik.http.routers.waha.service=waha
+      - traefik.http.services.waha.loadbalancer.server.port=3000
+      - traefik.http.services.waha.loadbalancer.passHostHeader=true
+      - traefik.http.middlewares.waha-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.routers.waha.middlewares=waha-sslheader@swarm
+      - traefik.http.routers.waha-hooks.rule=Host(`waha.${DOMAIN}`) && PathPrefix(`/webhooks`)
+      - traefik.http.routers.waha-hooks.entrypoints=websecure
+      - traefik.http.routers.waha-hooks.tls.certresolver=letsencrypt
+      - traefik.http.routers.waha-hooks.priority=100
+      - traefik.http.routers.waha-hooks.service=waha
+      - traefik.http.middlewares.waha-hooks-deny.ipallowlist.sourcerange=127.0.0.1/32
+      - traefik.http.routers.waha-hooks.middlewares=waha-hooks-deny@swarm
+  chatwoot-admin:
+    image: chatwoot/chatwoot@sha256:79f29e368ff49a610967dd49005b7a194ad929f8fcaa0c9177c664e07fd03eef
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: "sh -c \"bundle exec rails db:chatwoot_prepare &&\n       bundle exec rails s -p 3000 -b 0.0.0.0\"\n"
+    entrypoint: docker/entrypoints/rails.sh
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=true
+    - RAILS_LOG_TO_STDOUT=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - ENABLE_ACCOUNT_SIGNUP=false
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=noreply@seudominio.com.br
+    - SMTP_ADDRESS=smtp.seudominio.com.br
+    - SMTP_PORT=587
+    - SMTP_AUTHENTICATION=plain
+    - SMTP_DOMAIN=seudominio.com.br
+    - SMTP_ENABLE_STARTTLS_AUTO=true
+    - SMTP_USERNAME=usuario@seudominio.com.br
+    - SMTP_PASSWORD=sua_senha_smtp
+    - SMTP_OPENSSL_VERIFY_MODE=none
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - WEB_CONCURRENCY=0
+    - RAILS_MAX_THREADS=5
+    - SIDEKIQ_CONCURRENCY=5
+    - RACK_TIMEOUT_SERVICE_TIMEOUT=30
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 1024M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+      - traefik.enable=true
+      - traefik.swarm.network=network_public
+      - traefik.http.routers.chatwoot-admin.rule=Host(`chat.${DOMAIN}`)
+      - traefik.http.routers.chatwoot-admin.entrypoints=websecure
+      - traefik.http.routers.chatwoot-admin.tls.certresolver=letsencrypt
+      - traefik.http.routers.chatwoot-admin.service=chatwoot-admin
+      - traefik.http.services.chatwoot-admin.loadbalancer.server.port=3000
+      - traefik.http.services.chatwoot-admin.loadbalancer.passhostheader=true
+      - traefik.http.middlewares.chatwoot-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.routers.chatwoot-admin.middlewares=chatwoot-sslheader@swarm
+  chatwoot-sidekiq:
+    image: chatwoot/chatwoot@sha256:79f29e368ff49a610967dd49005b7a194ad929f8fcaa0c9177c664e07fd03eef
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    entrypoint: docker/entrypoints/rails.sh
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=true
+    - RAILS_LOG_TO_STDOUT=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=noreply@seudominio.com.br
+    - SMTP_ADDRESS=smtp.seudominio.com.br
+    - SMTP_PORT=587
+    - SMTP_AUTHENTICATION=plain
+    - SMTP_DOMAIN=seudominio.com.br
+    - SMTP_ENABLE_STARTTLS_AUTO=true
+    - SMTP_USERNAME=usuario@seudominio.com.br
+    - SMTP_PASSWORD=sua_senha_smtp
+    - SMTP_OPENSSL_VERIFY_MODE=none
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - SIDEKIQ_CONCURRENCY=5
+    - RAILS_MAX_THREADS=5
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 1024M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+networks:
+  network_public:
+    external: true
