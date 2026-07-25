@@ -621,7 +621,7 @@ services:
     - INSTALLATION_ENV=docker
     - FRONTEND_URL=https://chat.${DOMAIN}
     - DEFAULT_LOCALE=pt_BR
-    - FORCE_SSL=true
+    - FORCE_SSL=false
     - RAILS_LOG_TO_STDOUT=true
     - SECRET_KEY_BASE=${SECRET_KEY_BASE}
     - ENABLE_ACCOUNT_SIGNUP=false
@@ -698,7 +698,7 @@ services:
     - INSTALLATION_ENV=docker
     - FRONTEND_URL=https://chat.${DOMAIN}
     - DEFAULT_LOCALE=pt_BR
-    - FORCE_SSL=true
+    - FORCE_SSL=false
     - RAILS_LOG_TO_STDOUT=true
     - SECRET_KEY_BASE=${SECRET_KEY_BASE}
     - REDIS_URL=redis://redis:6379/3
