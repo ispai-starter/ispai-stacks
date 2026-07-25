@@ -597,13 +597,18 @@ services:
       - traefik.http.services.waha.loadbalancer.passHostHeader=true
       - traefik.http.middlewares.waha-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
       - traefik.http.routers.waha.middlewares=waha-sslheader@swarm
-      - traefik.http.routers.waha-hooks.rule=Host(`waha.${DOMAIN}`) && PathPrefix(`/webhooks`)
+      - traefik.http.routers.waha-hooks.rule=Host(`waha.${DOMAIN}`) && Path(`/webhooks/chatwoot/default/chatwoot-${AGENT}-${WAHA_WEBHOOK_SECRET}`)
       - traefik.http.routers.waha-hooks.entrypoints=websecure
       - traefik.http.routers.waha-hooks.tls.certresolver=letsencrypt
-      - traefik.http.routers.waha-hooks.priority=100
+      - traefik.http.routers.waha-hooks.priority=110
       - traefik.http.routers.waha-hooks.service=waha
+      - traefik.http.routers.waha-hooks-deny.rule=Host(`waha.${DOMAIN}`) && PathPrefix(`/webhooks`)
+      - traefik.http.routers.waha-hooks-deny.entrypoints=websecure
+      - traefik.http.routers.waha-hooks-deny.tls.certresolver=letsencrypt
+      - traefik.http.routers.waha-hooks-deny.priority=100
+      - traefik.http.routers.waha-hooks-deny.service=waha
       - traefik.http.middlewares.waha-hooks-deny.ipallowlist.sourcerange=127.0.0.1/32
-      - traefik.http.routers.waha-hooks.middlewares=waha-hooks-deny@swarm
+      - traefik.http.routers.waha-hooks-deny.middlewares=waha-hooks-deny@swarm
   chatwoot-admin:
     image: chatwoot/chatwoot@sha256:79f29e368ff49a610967dd49005b7a194ad929f8fcaa0c9177c664e07fd03eef
     hostname: '{{.Service.Name}}.{{.Task.Slot}}'
