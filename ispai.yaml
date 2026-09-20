@@ -613,7 +613,7 @@ services:
   chatwoot-admin:
     image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot@sha256:79f29e368ff49a610967dd49005b7a194ad929f8fcaa0c9177c664e07fd03eef}
     hostname: '{{.Service.Name}}.{{.Task.Slot}}'
-    command: "sh -c \"bundle exec rails db:chatwoot_prepare &&\n       bundle exec rails s -p 3000 -b 0.0.0.0\"\n"
+    command: "sh -c \"[ -f /app/storage/.edicao-mega ] && { echo \\\"ABORTADO: esta VPS roda a edicao Mega do Chatwoot (ADR-0032). O binario Community nao pode tocar o banco Mega.\\\" >&2; exit 1; };\n       bundle exec rails db:chatwoot_prepare &&\n       bundle exec rails s -p 3000 -b 0.0.0.0\"\n"
     entrypoint: docker/entrypoints/rails.sh
     volumes:
     - /storage/chatwoot/data:/app/storage
@@ -661,7 +661,7 @@ services:
     - ENABLE_RACK_ATTACK=false
     deploy:
       mode: replicated
-      replicas: 1
+      replicas: ${CHATWOOT_COMMUNITY_REPLICAS:-1}
       resources:
         limits:
           cpus: '1'
@@ -690,7 +690,7 @@ services:
   chatwoot-sidekiq:
     image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot@sha256:79f29e368ff49a610967dd49005b7a194ad929f8fcaa0c9177c664e07fd03eef}
     hostname: '{{.Service.Name}}.{{.Task.Slot}}'
-    command: bundle exec sidekiq -C config/sidekiq.yml
+    command: "sh -c \"[ -f /app/storage/.edicao-mega ] && { echo \\\"ABORTADO: esta VPS roda a edicao Mega do Chatwoot (ADR-0032). O binario Community nao pode tocar o banco Mega.\\\" >&2; exit 1; };\n       bundle exec sidekiq -C config/sidekiq.yml\"\n"
     entrypoint: docker/entrypoints/rails.sh
     volumes:
     - /storage/chatwoot/data:/app/storage
@@ -734,7 +734,7 @@ services:
     - ENABLE_PUSH_RELAY_SERVER=true
     deploy:
       mode: replicated
-      replicas: 1
+      replicas: ${CHATWOOT_COMMUNITY_REPLICAS:-1}
       resources:
         limits:
           cpus: '1'
@@ -742,6 +742,399 @@ services:
         reservations:
           cpus: '0.5'
           memory: 1024M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-admin:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec rails s -p 3000 -b 0.0.0.0
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - ENABLE_ACCOUNT_SIGNUP=false
+    - WEB_CONCURRENCY=2
+    - RAILS_MAX_THREADS=5
+    - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1024M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-sidekiq-critical:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -q critical -q high -q default -c 15
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - SIDEKIQ_CONCURRENCY=15
+    - RAILS_MAX_THREADS=15
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1024M
+        reservations:
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-sidekiq-events:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -q events -c 10
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - SIDEKIQ_CONCURRENCY=10
+    - RAILS_MAX_THREADS=10
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1024M
+        reservations:
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-sidekiq-low:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -q low -q scheduled_jobs -q deferred -q purgable -q housekeeping -q async_database_migration -q bulk_reindex_low -q active_storage_analysis -q active_storage_purge -q action_mailbox_incineration -c 10
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - SIDEKIQ_CONCURRENCY=10
+    - RAILS_MAX_THREADS=10
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-sidekiq-medium:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -q medium -q mailers -q action_mailbox_routing -q scheduled_messages -q whatsapp -c 10
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - SIDEKIQ_CONCURRENCY=10
+    - RAILS_MAX_THREADS=10
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 768M
+        reservations:
+          memory: 384M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      update_config:
+        parallelism: 1
+        delay: 10s
+  chatwoot-mega-sidekiq-whatsapp-history:
+    image: ${CHATWOOT_MEGA_IMAGE:-sendingtk/chatwoot@sha256:d618d8d64d7749b327ce3ee8fa400f5b53c11c430d66ffac71fd504822f83bd2}
+    hostname: '{{.Service.Name}}.{{.Task.Slot}}'
+    command: bundle exec sidekiq -q whatsapp_history_sync -c 2
+    volumes:
+    - /storage/chatwoot/data:/app/storage
+    networks:
+    - network_public
+    environment:
+    - TZ=America/Sao_Paulo
+    - INSTALLATION_NAME=chatwoot
+    - NODE_ENV=production
+    - RAILS_ENV=production
+    - INSTALLATION_ENV=docker
+    - FRONTEND_URL=https://chat.${DOMAIN}
+    - DEFAULT_LOCALE=pt_BR
+    - FORCE_SSL=false
+    - RAILS_LOG_TO_STDOUT=true
+    - SKIP_DB_MIGRATIONS=true
+    - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+    - REDIS_URL=redis://redis:6379/3
+    - POSTGRES_HOST=postgres
+    - POSTGRES_USERNAME=postgres
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DATABASE=chatwoot
+    - MAILER_SENDER_EMAIL=${SMTP_FROM:-}
+    - SMTP_ADDRESS=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_AUTHENTICATION=${SMTP_AUTHENTICATION:-login}
+    - SMTP_DOMAIN=${SMTP_DOMAIN:-}
+    - SMTP_ENABLE_STARTTLS_AUTO=${SMTP_ENABLE_STARTTLS_AUTO:-true}
+    - SMTP_USERNAME=${SMTP_USER:-}
+    - SMTP_PASSWORD=${SMTP_TOKEN:-}
+    - SMTP_OPENSSL_VERIFY_MODE=${SMTP_OPENSSL_VERIFY_MODE:-peer}
+    - ACTIVE_STORAGE_SERVICE=s3_compatible
+    - STORAGE_BUCKET_NAME=chatwoot
+    - STORAGE_ACCESS_KEY_ID=${CHATWOOT_S3_ACCESS_KEY}
+    - STORAGE_SECRET_ACCESS_KEY=${CHATWOOT_S3_SECRET_KEY}
+    - STORAGE_REGION=us-east-1
+    - STORAGE_ENDPOINT=https://s3.${DOMAIN}
+    - STORAGE_FORCE_PATH_STYLE=true
+    - ENABLE_PUSH_RELAY_SERVER=true
+    - ENABLE_RACK_ATTACK=false
+    - USE_INBOX_AVATAR_FOR_BOT=true
+    - WEBHOOKS_TRIGGER_TIMEOUT=40
+    - EVENT_DISPATCHER_IN_MAIN_SIDEKIQ=false
+    - WHATSAPP_HISTORY_SYNC_IN_MAIN_SIDEKIQ=false
+    - SIDEKIQ_CONCURRENCY=2
+    - RAILS_MAX_THREADS=2
+    deploy:
+      mode: replicated
+      replicas: ${CHATWOOT_MEGA_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1024M
+        reservations:
+          memory: 512M
       restart_policy:
         condition: any
         delay: 10s
