@@ -140,7 +140,7 @@ services:
         delay: 10s
         max_attempts: 10
   minio:
-    image: quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    image: ${MINIO_IMAGE:-painel.isp.academy/ispai-minio@sha256:3480d69953ebabebc74262339ac414d891bf58695691af42c9d67f6d82f8ba48}
     hostname: '{{.Service.Name}}.{{.Task.Slot}}'
     command: server /data --console-address ":9001"
     environment:
